@@ -27,6 +27,7 @@ def get_project_ids():
     project_id = []
     # Get projects from the organization
     project_ids = project_resource.projects().search().execute()
+   
     for project in project_ids.get('projects', []):
         project_id.append(project.get('name'))
     
@@ -42,28 +43,29 @@ def support_subscribe_emails(emails):
         get_cases = support_service.cases().list(parent=parent).execute()
 
         for case in get_cases['cases']:
-            # Case number
-            case_number = case['name']
+            if case['state'] != 'CLOSED':
+                # Case number
+                case_number = case['name']
 
-            get_case_req = support_service.cases().get(name=case_number)
+                get_case_req = support_service.cases().get(name=case_number)
     
-            case_details = get_case_req.execute(num_retries=MAX_RETRIES)
-            new_cc = emails
+                case_details = get_case_req.execute(num_retries=MAX_RETRIES)
+                new_cc = emails
             
-            if "subscriberEmailAddresses" in case_details:
-                current_cc = case_details["subscriberEmailAddresses"]
-                # List of added emails not already in CC list for notifications
-                new_cc = [x for x in emails if x not in current_cc]
-                # Update list
-                emails.extend(current_cc)
+                if "subscriberEmailAddresses" in case_details:
+                    current_cc = case_details["subscriberEmailAddresses"]
+                    # List of added emails not already in CC list for notifications
+                    new_cc = [x for x in emails if x not in current_cc]
+                    # Update list
+                    emails.extend(current_cc)
 
-                # Update CC list
-                update_email(emails, case_number)
+                    # Update CC list
+                    update_email(emails, case_number)
 
-            # If subscriberEmailAddresses is not present (no CC in the case)
-            elif "subscriberEmailAddresses" not in case_details:
-                # Create CC list with emails
-                update_email(emails, case_number)
+                # If subscriberEmailAddresses is not present (no CC in the case)
+                elif "subscriberEmailAddresses" not in case_details:
+                    # Create CC list with emails
+                    update_email(emails, case_number)
 
 def update_email(emails, case_number):
     # Update CC list
