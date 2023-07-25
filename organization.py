@@ -1,77 +1,102 @@
-import requests
 import json
+import time
 import googleapiclient.discovery
-from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
+import functools
 
 MAX_RETRIES = 3
 
-with open('organization.json') as source:
+with open("organization.json") as source:
     info = json.load(source)
 
-credentials = service_account.Credentials.from_service_account_info(info, scopes=['https://www.googleapis.com/auth/cloud-platform'])
+credentials = service_account.Credentials.from_service_account_info(
+    info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
 
-# Get our discovery doc and build our service
 support_service = googleapiclient.discovery.build(
-                            serviceName="cloudsupport",
-                            version="v2beta",
-                            discoveryServiceUrl="https://cloudsupport.googleapis.com/$discovery/rest?version=v2beta",
-                            credentials=credentials)
+    serviceName="cloudsupport",
+    version="v2beta",
+    discoveryServiceUrl="https://cloudsupport.googleapis.com/$discovery/rest?version=v2beta",
+    credentials=credentials,
+)
 
-project_resource = googleapiclient.discovery.build(
-                            serviceName="cloudresourcemanager",
-                            version="v3",
-                            credentials=credentials)
-
+# Get project ids
 def get_project_ids():
+
     project_id = []
+
     # Get projects from the organization
+    project_resource = googleapiclient.discovery.build(
+        serviceName="cloudresourcemanager", version="v3", credentials=credentials
+    )
+
     project_ids = project_resource.projects().search().execute()
-   
-    for project in project_ids.get('projects', []):
-        project_id.append(project.get('name'))
-    
+
+    for project in project_ids.get("projects", []):
+        project_id.append(project.get("name"))
+
     return project_id
 
+
+# Get cases from each project under the organization
+def get_cases_for_project(project_id):
+    get_cases = support_service.cases().list(parent=project_id).execute()
+    cases = get_cases.get("cases", [])
+
+    return cases
+
+
+def process_case(case):
+    # Checking to see if the case is NOT closed
+    if case["state"] != "CLOSED":
+        return case["name"]
+    return None
+
+
 def support_subscribe_emails(emails):
-    
     project_ids = get_project_ids()
 
-    for project_id in project_ids:
-        parent = project_id 
+    # Step 1: Map - Get cases for each project using map
+    cases_list = map(get_cases_for_project, project_ids)
 
-        get_cases = support_service.cases().list(parent=parent).execute()
+    # Step 2: Reduce - Flatten the list of cases from multiple projects
+    cases = functools.reduce(lambda x, y: x + y, cases_list)
 
-        for case in get_cases['cases']:
-            if case['state'] != 'CLOSED':
-                # Case number
-                case_number = case['name']
+    # Step 3: Map - Process each case to get the case numbers using map
+    case_numbers = list(filter(None, map(process_case, cases)))
 
-                get_case_req = support_service.cases().get(name=case_number)
-    
-                case_details = get_case_req.execute(num_retries=MAX_RETRIES)
-                new_cc = emails
-            
-                if "subscriberEmailAddresses" in case_details:
-                    current_cc = case_details["subscriberEmailAddresses"]
-                    # List of added emails not already in CC list for notifications
-                    new_cc = [x for x in emails if x not in current_cc]
-                    # Update list
-                    emails.extend(current_cc)
+    # Step 4: Map - Update the CC list for each case using map
+    updated_cases = map(
+        lambda case_number: update_cc_for_case(case_number, emails), case_numbers
+    )
 
-                    # Update CC list
-                    update_email(emails, case_number)
+    list(updated_cases)
 
-                # If subscriberEmailAddresses is not present (no CC in the case)
-                elif "subscriberEmailAddresses" not in case_details:
-                    # Create CC list with emails
-                    update_email(emails, case_number)
 
-def update_email(emails, case_number):
-    # Update CC list
-    body = {"subscriberEmailAddresses": [emails]}
+def update_cc_for_case(case_number, emails):
+    # Step 1: Get the case details using support_service.cases().get()
+    get_case_req = support_service.cases().get(name=case_number)
+    case_details = get_case_req.execute(num_retries=MAX_RETRIES)
+    print(case_details)
+
+    # Step 2: Update the subscriberEmailAddresses (CC) list with the new emails
+    if "subscriberEmailAddresses" in case_details:
+        current_cc = case_details["subscriberEmailAddresses"]
+        current_cc.extend(emails)
+    else:
+        current_cc = emails
+
+    # Step 3: Make the API call to update the CC list for the case
+    body = {"subscriberEmailAddresses": current_cc}
     update_mask = "subscriberEmailAddresses"
-    update_req = support_service.cases().patch(name=case_number, updateMask=update_mask, body=body)
+    update_req = support_service.cases().patch(
+        name=case_number, updateMask=update_mask, body=body
+    )
     update_req.execute(num_retries=MAX_RETRIES)
 
-support_subscribe_emails(['taufique@nooranillc.com'])
+
+start_time = time.time()
+support_subscribe_emails(["funni.ws@gmail.com"])
+end_time = time.time()
+
+print("It took {} seconds to run the program!".format(end_time - start_time))
