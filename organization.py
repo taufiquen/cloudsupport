@@ -42,13 +42,12 @@ def get_project_ids():
 def get_cases_for_project(project_id):
     get_cases = support_service.cases().list(parent=project_id).execute()
     cases = get_cases.get("cases", [])
-
     return cases
 
 
 def process_case(case):
     # Checking to see if the case is NOT closed
-    if case["state"] != "CLOSED":
+    if case["state"] == "NEW" or case["state"] == "ASSIGNED":
         return case["name"]
     return None
 
@@ -77,7 +76,6 @@ def update_cc_for_case(case_number, emails):
     # Step 1: Get the case details using support_service.cases().get()
     get_case_req = support_service.cases().get(name=case_number)
     case_details = get_case_req.execute(num_retries=MAX_RETRIES)
-    print(case_details)
 
     # Step 2: Update the subscriberEmailAddresses (CC) list with the new emails
     if "subscriberEmailAddresses" in case_details:
@@ -95,8 +93,4 @@ def update_cc_for_case(case_number, emails):
     update_req.execute(num_retries=MAX_RETRIES)
 
 
-start_time = time.time()
-support_subscribe_emails(["funni.ws@gmail.com"])
-end_time = time.time()
-
-print("It took {} seconds to run the program!".format(end_time - start_time))
+support_subscribe_emails(["email@domain.com"])
