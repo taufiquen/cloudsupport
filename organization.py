@@ -1,13 +1,26 @@
 import json
-import time
+import os
+import logging
 import googleapiclient.discovery
 from google.oauth2 import service_account
 import functools
 
 MAX_RETRIES = 3
 
-with open("organization.json") as source:
+with open("service_account.json") as source:
     info = json.load(source)
+
+# Create and configure logger
+logging.basicConfig(filename="cloudsupport.log",
+                    format='%(asctime)s %(message)s',
+                    filemode='a',
+                    level=logging.INFO)
+
+# Creating an object
+logger = logging.getLogger()
+
+# Getting email from the environmental variable
+EMAIL_ADDRESSES = os.environ["EMAIL_ADDRESSES"].split(",")
 
 credentials = service_account.Credentials.from_service_account_info(
     info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -18,11 +31,12 @@ support_service = googleapiclient.discovery.build(
     version="v2beta",
     discoveryServiceUrl="https://cloudsupport.googleapis.com/$discovery/rest?version=v2beta",
     credentials=credentials,
+    cache_discovery=False,
 )
+
 
 # Get project ids
 def get_project_ids():
-
     project_id = []
 
     # Get projects from the organization
@@ -92,5 +106,8 @@ def update_cc_for_case(case_number, emails):
     )
     update_req.execute(num_retries=MAX_RETRIES)
 
+    # Step 4: Log the entry
+    logger.info(f"Case: {case_number} updated with email(s): {emails}")
 
-support_subscribe_emails(["email@domain.com"])
+
+support_subscribe_emails(EMAIL_ADDRESSES)
